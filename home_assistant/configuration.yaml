@@ -1,0 +1,29 @@
+luxtronik:
+  host: 192.168.xxx.xxx
+  port: 8889
+
+# Default stuff
+default_config:
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+# Text to speech
+tts:
+  - platform: google_translate
+
+mqtt:
+  sensor:
+    - name: "kastelli_energy"
+      state_topic: "esp/ldr/energy"
+      value_template: "{{ value | float(0) / 1000 }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: measurement
+      force_update: true
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+sensor: !include sensors.yaml
