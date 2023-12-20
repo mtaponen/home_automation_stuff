@@ -1,0 +1,93 @@
+- id: '1671715616932'
+  alias: MLP-lammitys-dynamic-rank-mukaan
+  description: MLP lammityksen ohjaus spottihinnan ja lämpötilaennusteen mukaan
+  trigger:
+  - platform: state
+    entity_id:
+    - sensor.spot_hinta_fi_dynamic_rank
+    enabled: true
+  - platform: template
+    value_template: '{{ now().minute==1 }}'
+    enabled: false
+  condition: []
+  action:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{(states.sensor.spot_hinta_fi_dynamic_rank.state) == "400"}}'
+      sequence:
+      - service: script.mlp_kytke_lammitys_pois
+        data: {}
+    default:
+    - service: script.mlp_kytke_lammitys_paalle
+      data: {}
+  mode: single
+- id: '1671731852344'
+  alias: MLP-LV-Ei-kalliit-tunnit
+  description: MLP LV spottihinnan mukaan - ei lv jos kalliit tunnit
+  trigger:
+  - platform: state
+    entity_id:
+    - sensor.spot_hinta_fi
+    attribute: Rank
+  - platform: event
+    event_type: hinta_muuttui
+    event_data: {}
+  condition: []
+  action:
+  - choose:
+    - conditions:
+      - condition: and
+        conditions:
+        - condition: numeric_state
+          entity_id: sensor.el_price
+          above: 20
+        - condition: numeric_state
+          entity_id: sensor.el_price_rank
+          above: 19
+      sequence:
+      - service: script.mlp_kytke_lv_pois
+        data: {}
+    default:
+    - service: script.mlp_kytke_lv_paalle
+      data: {}
+  mode: single
+- id: '1699105678586'
+  alias: Mökki - lämmöt päälle
+  description: Lämmöt päälle varauskalenterin perusteella
+  trigger:
+  - platform: calendar
+    event: start
+    offset: '6:0:0'
+    entity_id: calendar.mokin_varaukset
+  condition: []
+  action:
+  - service: scene.turn_on
+    target:
+      entity_id: scene.kotona
+    metadata: {}
+  - service: script.syote_ilp_kotona
+    data: {}
+  mode: single
+- id: '1699105774456'
+  alias: Mökki - lämmöt pois
+  description: Lämmöt pois automaattisesti varauskalenterin perusteella
+  trigger:
+  - platform: calendar
+    event: end
+    offset: '-6:0:0'
+    entity_id: calendar.mokin_varaukset
+  condition:
+  - condition: numeric_state
+    entity_id: calendar.mokin_varaukset
+    attribute: all_day
+    below: 1
+    enabled: false
+  action:
+  - service: scene.turn_on
+    target:
+      entity_id: scene.poissa
+    metadata: {}
+  - service: script.syote_ilp_poissa
+    data: {}
+  mode: single
