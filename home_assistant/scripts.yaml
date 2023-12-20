@@ -1,0 +1,77 @@
+mlp_kytke_lammitys_pois:
+  alias: 'MLP: Kytke lammitys pois'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Hz_akt
+      value: 'Off'
+  mode: single
+  icon: mdi:air-humidifier-off
+mlp_kytke_lammitys_paalle:
+  alias: 'MLP: Kytke lammitys päälle'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Hz_akt
+      value: Automatic
+  icon: mdi:air-humidifier
+mlp_kytke_lv_pois:
+  alias: 'MLP: Kytke lammin vesi pois'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Bw_akt
+      value: 'Off'
+  mode: single
+  icon: mdi:air-humidifier-off
+mlp_kytke_lv_paalle:
+  alias: 'MLP: Kytke lammin vesi päälle'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Bw_akt
+      value: Automatic
+  icon: mdi:air-humidifier
+syote_ilp_kotona:
+  alias: Syöte ILP Kotona
+  sequence:
+  - service: climate.turn_on
+    data: {}
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+  - service: climate.set_preset_mode
+    data:
+      preset_mode: '1'
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+    enabled: false
+  - service: climate.set_temperature
+    data:
+      temperature: 23
+      hvac_mode: heat
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+  mode: single
+  icon: mdi:home-outline
+syote_ilp_poissa:
+  alias: Syöte ILP Poissa
+  sequence:
+  - service: climate.turn_on
+    data: {}
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+  - service: climate.set_preset_mode
+    data:
+      preset_mode: '2'
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+    enabled: false
+  - service: climate.set_temperature
+    data:
+      hvac_mode: heat
+      temperature: 12
+    target:
+      device_id: 42c2fdcb8e532e26088702f0de6a4d17
+  mode: single
+  icon: mdi:home-off-outline
+  
