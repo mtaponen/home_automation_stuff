@@ -1,0 +1,233 @@
+  - platform: luxtronik
+    sensors:
+      - group: calculations
+        id: ID_WEB_Temperatur_TVL
+        friendly_name: MLP_Lämmitysvesi_meno
+      - group: calculations
+        id: ID_WEB_Temperatur_TRL
+        friendly_name: MLP_Lämmitysvesi_paluu
+      - group: calculations
+        id: ID_WEB_Sollwert_TRL_HZ
+        friendly_name: MLP_Paluu_asetus
+      - group: calculations
+        id: ID_WEB_Temperatur_TRL_ext
+      - group: calculations
+        id: ID_WEB_Temperatur_THG
+        friendly_name: MLP_Kuumakaasu
+      - group: calculations
+        id: ID_WEB_Temperatur_TA
+        friendly_name: MLP_Ulkolämpötila
+      - group: calculations
+        id: ID_WEB_Mitteltemperatur
+      - group: calculations
+        id: ID_WEB_Temperatur_TBW
+        friendly_name: MLP_Käyttövesi
+      - group: calculations
+        id: ID_WEB_Einst_BWS_akt
+        friendly_name: MLP_Käyttövesi_asetus
+      - group: calculations
+        id: ID_WEB_Temperatur_TWE
+        friendly_name: MLP_Liuos_sisään
+      - group: calculations
+        id: ID_WEB_Temperatur_TWA
+        friendly_name: MLP_Liuos_ulos
+      - group: calculations
+        id: ID_WEB_Temperatur_TFB1
+      - group: calculations
+        id: ID_WEB_ERROR_Time0
+        friendly_name: MLP_Virheaika
+      - group: calculations
+        id: ID_WEB_ERROR_Nr0
+        friendly_name: MLP_Virhekoodi
+      - group: calculations
+        id: ID_WEB_Zaehler_BetrZeitVD1
+        friendly_name: MLP_KäyntiaikaVD1
+      - group: calculations
+        id: ID_WEB_Zaehler_BetrZeitImpVD1
+        friendly_name: MLP_KäynnistyksetVD1
+      - group: calculations
+        id: ID_WEB_Zaehler_BetrZeitZWE1
+        friendly_name: MLP_KäyntiaikaLisälämpö
+      - group: calculations
+        id: ID_WEB_Zaehler_BetrZeitHz
+        friendly_name: MLP_KäyntiaikaLämmitys
+      - group: calculations
+        id: ID_WEB_Zaehler_BetrZeitBW
+        friendly_name: MLP_KäyntiaikaKäyttövesi
+      - group: calculations
+        id: ID_WEB_WP_BZ_akt
+        friendly_name: MLP_Mode
+
+  - platform: template
+    sensors:
+      mlp_kayttotunnit:
+        unit_of_measurement: "h"
+        value_template: "{{ '{:.2f}'.format( states('sensor.mlp_kayntiaikavd1') | round(-3) / 3600 ) }}"
+      mlp_lisalampo:
+        unit_of_measurement: "h"
+        value_template: "{{ '{:.2f}'.format( states('sensor.mlp_kayntiaikalisalampo') | round(-3) / 3600 ) }}"
+
+  - platform: rest
+    scan_interval: 300  # 5min
+    name: "spot_hinta_fi"
+    resource: https://api.spot-hinta.fi/JustNow
+    method: GET
+    device_class: monetary
+    force_update: true
+    json_attributes:
+      - DateTime
+      - PriceWithTax
+      - PriceNoTax
+      - Rank
+    state_class: measurement
+
+  - platform: rest
+    scan_interval: 300  # 5min
+    name: "spot_hinta_fi_dynamic_rank"
+    resource: https://api.spot-hinta.fi/JustNowRankDynamic?rankAtZeroDegrees=12&rankAdjusterPercentage=6&minimumRank=12&priceAlwaysAllowed=10&postalCode=90230
+    method: GET
+    device_class: monetary
+    force_update: true
+    state_class: measurement
+
+  - platform: template
+    sensors:
+      el_price:
+        friendly_name: "Sähkön hinta nyt"
+        unit_of_measurement: "c/kWh"
+        value_template: "{{ state_attr('sensor.spot_hinta_fi', 'PriceWithTax') | float * 100 }}"
+      el_price_rank:
+        friendly_name: "Kuluvan tunnin 'rank'"
+        value_template: "{{ state_attr('sensor.spot_hinta_fi', 'Rank') | int }}"
+
+  - platform: template
+    sensors:
+      kastelli_current_power:
+        friendly_name: "Sähkön hetkellinen kulutus"
+        unit_of_measurement: "kW"
+        value_template: "{{ states('sensor.kastelli_energy') | float * 3600 / 10 }}"
+        device_class: energy
+
+  - platform: template
+    sensors:
+      kastelli_current_cost:
+        friendly_name: "Hetkellinen tuntikustannus"
+        unit_of_measurement: "c/h"
+        value_template: "{{ states('sensor.kastelli_energy') | float * 3600 / 10 * states('sensor.el_price') | float }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_energy_total_1h
+    entity_id: sensor.kastelli_current_power
+    state_characteristic: average_step
+    max_age: 3600
+    sampling_size: 700
+
+  - platform: statistics
+    name: kastelli_energy_cost_1h
+    entity_id: sensor.kastelli_current_cost
+    state_characteristic: average_step
+    max_age: 3600
+    sampling_size: 700
+
+  - platform: statistics
+    name: kastelli_power_average_24h
+    entity_id: sensor.kastelli_current_power
+    state_characteristic: average_step
+    max_age: 86400
+    sampling_size: 16800
+
+  - platform: template
+    sensors:
+      kastelli_energy_total_24h:
+        friendly_name: "24h energia"
+        unit_of_measurement: "kWh"
+        value_template: "{{ states('sensor.kastelli_power_average_24h') | float * 24 }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_energy_average_cost_24h
+    entity_id: sensor.kastelli_current_cost
+    state_characteristic: average_step
+    max_age: 86400
+    sampling_size: 16800
+
+  - platform: template
+    sensors:
+      kastelli_daily_cost:
+        friendly_name: "24h kustannus"
+        unit_of_measurement: "€"
+        value_template: "{{ states('sensor.kastelli_energy_average_cost_24h') | float * 24 / 100 }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_power_average_30d
+    entity_id: sensor.kastelli_current_power
+    state_characteristic: average_step
+    max_age: 2592000
+    sampling_size: 504000
+
+  - platform: template
+    sensors:
+      kastelli_energy_total_30d:
+        friendly_name: "30pv energia"
+        unit_of_measurement: "kWh"
+        value_template: "{{ states('sensor.kastelli_power_average_30d') | float * 24 * 30 }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_energy_average_cost_30d
+    entity_id: sensor.kastelli_current_cost
+    state_characteristic: average_step
+    max_age: 2592000
+    sampling_size: 504000
+
+  - platform: template
+    sensors:
+      kastelli_monthly_cost:
+        friendly_name: "30pv kustannus"
+        unit_of_measurement: "€"
+        value_template: "{{ states('sensor.kastelli_energy_average_cost_30d') | float * 24 * 30 / 100 }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_average_power
+    entity_id: sensor.kastelli_energy
+    state_characteristic: average_linear
+    max_age: 60
+    sampling_size: 100
+
+  - platform: template
+    sensors:
+      kastelli_energy_cost:
+        unit_of_measurement: "c"
+        value_template: "{{ states('sensor.kastelli_energy') | float * states('sensor.el_price') | float }}"
+        device_class: energy
+
+  - platform: statistics
+    name: kastelli_average_cost_24h
+    entity_id: sensor.el_price
+    state_characteristic: mean
+    max_age: 86400
+    sampling_size: 300
+
+  - platform: statistics
+    name: kastelli_average_cost_30d
+    entity_id: sensor.el_price
+    state_characteristic: mean
+    max_age: 2592000
+    sampling_size: 9000
+
+  - platform: template
+    sensors:
+      kastelli_real_cost_24h:
+        unit_of_measurement: "c/kWh"
+        value_template: "{{ '{:.2f}'.format(states('sensor.kastelli_daily_cost') | float * 100 / states('sensor.kastelli_energy_total_24h') | float ) }}"
+
+  - platform: template
+    sensors:
+      kastelli_real_cost_30d:
+        unit_of_measurement: "c/kWh"
+        value_template: "{{ '{:.2f}'.format(states('sensor.kastelli_monthly_cost') | float * 100 / states('sensor.kastelli_energy_total_30d') | float ) }}"
+
+
