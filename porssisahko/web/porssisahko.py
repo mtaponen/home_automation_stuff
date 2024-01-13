@@ -1,8 +1,7 @@
 from flask import Flask, jsonify, g
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
-import pytz
 import logging
 
 import sqlite3
@@ -11,21 +10,10 @@ from sqlite3 import Error
 app = Flask(__name__)
 
 DATABASE = 'prices.db'
-# Set the logging level
+
 app.logger.setLevel(logging.INFO)
 
-# # Configure a stream handler to write logs to stdout
-# stream_handler = logging.StreamHandler()
-# stream_handler.setLevel(logging.DEBUG)
 
-# # Create a formatter and set it on the stream handler
-# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-# stream_handler.setFormatter(formatter)
-
-# # Add the stream handler to the app's logger
-# app.logger.addHandler(stream_handler)
-
-local_tz = pytz.timezone('Europe/Helsinki')
 # Singleton to get the SQLite connection (one connection per thread)
 def get_db():
     db = getattr(g, '_database', None)
@@ -34,29 +22,21 @@ def get_db():
     return db
 
 
-# Initialize the scheduler
-scheduler = BackgroundScheduler(timezone="UTC")
-
-# Function to be executed at 02:00 and 14:00 every day
-def make_query():
-    # Add your logic for making a query here
-    print("Query executed at:", datetime.utcnow())
-
-# Schedule the make_query function every day at 02:00 and 14:00
-scheduler.add_job(make_query, 'cron', hour='2,14')
-scheduler.start()
-
 # Get data before first call
 @app.before_first_request
 def before_first_request():
-    make_query()
+    update_prices()
 
 # Get cheapest 3 hours as average
-@app.route('/get_cheap_hours', methods=['GET'])
+'''
+   Get cheapest 3 hour average.
+   if we are already more than 1h into the cheapest period, return the next known cheapest period
+'''
+@app.route('/cheap_hours', methods=['GET'])
 def get_cheap_hours():
     conn = get_db()
     cursor = conn.cursor()
-    now = datetime.utcnow().astimezone(local_tz)
+    now = datetime.now(timezone.utc) - timedelta(hours=1)
 
     # Fetch only future rows
     cursor.execute('SELECT * FROM prices WHERE startDate > ? ', (now,))
@@ -82,17 +62,18 @@ def get_cheap_hours():
         "hour": start_hour
         }
 
-    # Commit the changes and close the connection
     conn.commit()
-    #conn.close()
     return jsonify(response_data)
 
-
-@app.route('/get_current_price', methods=['GET'])
+'''
+    Get the current price info
+    for some reason the time returned is 2 hours off (which is like it was in GMT)
+'''
+@app.route('/current_price', methods=['GET'])
 def get_current_price():
     conn = get_db()
     cursor = conn.cursor()
-    now = datetime.utcnow().astimezone(local_tz)
+    now = datetime.now(timezone.utc)
     # Fetch only future rows
     cursor.execute('SELECT * FROM prices WHERE startDate < ? AND endDate > ? ', (now,now,))
     rows = cursor.fetchall()
@@ -103,13 +84,21 @@ def get_current_price():
         "price": price
         }
 
-    # Commit the changes and close the connection
     conn.commit()
-    #conn.close()
     return jsonify(response_data)
 
+'''
+    Getting the price info
+    Note that this is not restful in this service as this is GET and it changes state
 
-def make_query():
+    api.porssisahko.net returns JSON prices - structure.
+    The timestamps are somehow "off". It claims being in UTC (Z in the end of timestamp),
+    still the times are almost local time (Helsinki). Last timeslot - however starts at 22 and ends 23.
+    it should either be starting at 23 (local time) or 22 (utc time) at winter.
+    Lets see how this behaves after DST...
+'''
+@app.route('/update_prices', methods=['GET'])
+def update_prices():
     app.logger.info("Getting latest price info")
     # Make the GET request - note that api returns timestamps with Z although data is in local time
     url = "https://api.porssisahko.net/v1/latest-prices.json"
@@ -129,10 +118,12 @@ def make_query():
         )
     ''')
 
+    max_end_date = datetime(1, 1, 1)
     # Parse and store the data in the database
     for entry in data["prices"]:
         startDate = datetime.strptime(entry["startDate"], "%Y-%m-%dT%H:%M:%S.%fZ")
         endDate = datetime.strptime(entry["endDate"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        max_end_date = max(max_end_date, endDate)
         price = entry["price"]
 
         cursor.execute('''
@@ -141,13 +132,13 @@ def make_query():
         ''', (startDate, endDate, price))
 
     # Delete old data
-    utc_now = datetime.utcnow().replace(tzinfo=pytz.utc)
+    utc_now = datetime.now(timezone.utc)
     cutoff_time = utc_now - timedelta(days=7)
     cursor.execute('DELETE FROM prices WHERE startDate < ?', (cutoff_time,))
 
     conn.commit()
-    #conn.close()
-    app.logger.info("Data initialized.")
+    app.logger.info(f"Data initialized up to {max_end_date.strftime('%Y-%m-%d %H:%M')}")
+    return jsonify({"updated_to": max_end_date})
 
 
 # Function to close the SQLite connection
@@ -157,7 +148,13 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
+
 if __name__ == '__main__':
+    scheduler = BackgroundScheduler(timezone="Europe/Helsinki")
+    # Prices should be available at 14:00 each day. 16:00 as a backup if it was late
+    scheduler.add_job(update_prices, 'cron', hour='14,16')
+    scheduler.start()
+
     # Run the Flask application on port 5000
     app.run(port=5000)
 
