@@ -88,7 +88,7 @@ def get_current_price():
     return jsonify(response_data)
 
 '''
-    Getting the price info
+    Updating the price info
     Note that this is not restful in this service as this is GET and it changes state
 
     api.porssisahko.net returns JSON prices - structure.
@@ -99,7 +99,7 @@ def get_current_price():
 '''
 @app.route('/update_prices', methods=['GET'])
 def update_prices():
-    app.logger.info("Getting latest price info")
+    app.logger.info("Updating latest price info")
     # Make the GET request - note that api returns timestamps with Z although data is in local time
     url = "https://api.porssisahko.net/v1/latest-prices.json"
     response = requests.get(url)
@@ -140,6 +140,22 @@ def update_prices():
     app.logger.info(f"Data initialized up to {max_end_date.strftime('%Y-%m-%d %H:%M')}")
     return jsonify({"updated_to": max_end_date})
 
+'''
+    Get the last timestamp for price info
+'''
+
+@app.route('/status', methods=['GET'])
+def status():
+    app.logger.info("Getting latest price info")
+
+    # # Connect to SQLite database
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT MAX(startDate) FROM prices')
+    max_end_date = cursor.fetchone()[0]
+    conn.commit()
+    app.logger.info(f"Data initialized up to {max_end_date}")
+    return jsonify({"updated_to": max_end_date})
 
 # Function to close the SQLite connection
 @app.teardown_appcontext
@@ -150,10 +166,10 @@ def close_connection(exception):
 
 
 if __name__ == '__main__':
-    scheduler = BackgroundScheduler(timezone="Europe/Helsinki")
-    # Prices should be available at 14:00 each day. 16:00 as a backup if it was late
-    scheduler.add_job(update_prices, 'cron', hour='14,16')
-    scheduler.start()
+    # scheduler = BackgroundScheduler(timezone="Europe/Helsinki")
+    # # Prices should be available at 14:00 each day. 16:00 as a backup if it was late
+    # scheduler.add_job(update_prices, 'cron', hour='14,16')
+    # scheduler.start()
 
     # Run the Flask application on port 5000
     app.run(port=5000)
