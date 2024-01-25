@@ -29,17 +29,21 @@ def before_first_request():
 
 # Get cheapest 3 hours as average
 '''
-   Get cheapest 3 hour average.
+   Get cheapest 3 hour average starting within next Xhrs period.
+   Return hour in the format 02:00 and
+   return "tomorrow": true if the period starts on the next day
    if we are already more than 1h into the cheapest period, return the next known cheapest period
 '''
-@app.route('/cheap_hours', methods=['GET'])
-def get_cheap_hours():
+@app.route('/cheap_hours',  defaults={'window': 48}, methods=['GET']) #default to the end of time
+@app.route('/cheap_hours/<int:window>', methods=['GET'])
+def get_cheap_hours(window):
     conn = get_db()
     cursor = conn.cursor()
     now = datetime.now(timezone.utc) - timedelta(hours=1)
+    end_time =  datetime.now(timezone.utc) + timedelta(hours=window+2) # period starts within x hours but we need 2 more hours to calculate average
 
     # Fetch only future rows
-    cursor.execute('SELECT * FROM prices WHERE startDate > ? ', (now,))
+    cursor.execute('SELECT * FROM prices WHERE startDate > ? and endDate < ?', (now, end_time))
     rows = cursor.fetchall()
 
     min_average_index = 0
@@ -56,10 +60,12 @@ def get_cheap_hours():
     # Print the three consecutive entries with the lowest average price
     start_date, end_date, price = rows[min_average_index]
     start_hour =  datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+    tomorrow = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S").date() == (now + timedelta(days=1)).date()
     response_data = {
         "start_date": start_date,
         "min_average": min_average,
-        "hour": start_hour
+        "hour": start_hour,
+        "tomorrow": tomorrow
         }
 
     conn.commit()
