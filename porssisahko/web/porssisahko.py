@@ -3,6 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta, timezone
 import requests
 import logging
+import pytz
 
 import sqlite3
 from sqlite3 import Error
@@ -32,15 +33,15 @@ def before_first_request():
    Get cheapest 3 hour average starting within next Xhrs period.
    Return hour in the format 02:00 and
    return "tomorrow": true if the period starts on the next day
-   if we are already more than 1h into the cheapest period, return the next known cheapest period
 '''
 @app.route('/cheap_hours',  defaults={'window': 48}, methods=['GET']) #default to the end of time
 @app.route('/cheap_hours/<int:window>', methods=['GET'])
 def get_cheap_hours(window):
     conn = get_db()
     cursor = conn.cursor()
-    now = datetime.now(timezone.utc) - timedelta(hours=1)
+    now = datetime.now(timezone.utc)
     end_time =  datetime.now(timezone.utc) + timedelta(hours=window+2) # period starts within x hours but we need 2 more hours to calculate average
+    timezone_local = pytz.timezone('Europe/Helsinki')
 
     # Fetch only future rows
     cursor.execute('SELECT * FROM prices WHERE startDate > ? and endDate < ?', (now, end_time))
@@ -61,11 +62,14 @@ def get_cheap_hours(window):
     start_date, end_date, price = rows[min_average_index]
     start_hour =  datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
     tomorrow = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S").date() == (now + timedelta(days=1)).date()
+    start_time_local = timezone_local.localize(datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S"))
+    hours_until =  round((start_time_local - now).total_seconds() / 3600)
     response_data = {
         "start_date": start_date,
         "min_average": min_average,
         "hour": start_hour,
-        "tomorrow": tomorrow
+        "tomorrow": tomorrow,
+        "hours_until": hours_until
         }
 
     conn.commit()
