@@ -47,7 +47,7 @@ syote_ilp_kotona:
     enabled: false
   - service: climate.set_temperature
     data:
-      temperature: 23
+      temperature: 21
       hvac_mode: heat
     target:
       device_id: 42c2fdcb8e532e26088702f0de6a4d17
@@ -74,4 +74,21 @@ syote_ilp_poissa:
       device_id: 42c2fdcb8e532e26088702f0de6a4d17
   mode: single
   icon: mdi:home-off-outline
-  
+mlp_kytke_lammitys_suora_sahko:
+  alias: 'MLP: Kytke lammitys suora sähkö'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Hz_akt
+      value: Second heatsource
+  icon: mdi:air-humidifier
+  mode: single
+mlp_kytke_lammin_vesi_suora_sahko:
+  alias: 'MLP: Kytke lammin vesi suora sähkö'
+  sequence:
+  - service: luxtronik.write
+    data:
+      parameter: ID_Ba_Bw_akt
+      value: Second heatsource
+  icon: mdi:air-humidifier
+  mode: single

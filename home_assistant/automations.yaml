@@ -18,6 +18,37 @@
       sequence:
       - service: script.mlp_kytke_lammitys_pois
         data: {}
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.el_price
+        above: 130
+      sequence:
+      - service: script.mlp_kytke_lammitys_pois
+        data: {}
+    - conditions:
+      - condition: and
+        conditions:
+        - condition: numeric_state
+          entity_id: sensor.el_price
+          below: -3
+        - condition: numeric_state
+          entity_id: sensor.mlp_ulkolampotila
+          above: -10
+      sequence:
+      - service: script.mlp_kytke_lammitys_suora_sahko
+        data: {}
+    - conditions:
+      - condition: and
+        conditions:
+        - condition: numeric_state
+          entity_id: sensor.mlp_ulkolampotila
+          above: 15
+        - condition: numeric_state
+          entity_id: sensor.ac2003_battery_temperature
+          above: 23
+      sequence:
+      - service: script.mlp_kytke_lammitys_pois
+        data: {}
     default:
     - service: script.mlp_kytke_lammitys_paalle
       data: {}
@@ -37,40 +68,98 @@
   action:
   - choose:
     - conditions:
-      - condition: and
+      - condition: or
         conditions:
+        - condition: and
+          conditions:
+          - condition: numeric_state
+            entity_id: sensor.el_price
+            above: 20
+          - condition: numeric_state
+            entity_id: sensor.el_price_rank
+            above: 19
         - condition: numeric_state
           entity_id: sensor.el_price
-          above: 20
-        - condition: numeric_state
-          entity_id: sensor.el_price_rank
-          above: 19
+          above: 100
       sequence:
       - service: script.mlp_kytke_lv_pois
+        data: {}
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.el_price
+        below: -3
+      sequence:
+      - service: script.mlp_kytke_lammin_vesi_suora_sahko
         data: {}
     default:
     - service: script.mlp_kytke_lv_paalle
       data: {}
   mode: single
 - id: '1699105678586'
-  alias: Mökki - lämmöt päälle
+  alias: Syöte - lämmöt päälle
   description: Lämmöt päälle varauskalenterin perusteella
   trigger:
   - platform: calendar
     event: start
-    offset: '6:0:0'
+    offset: '2:0:0'
     entity_id: calendar.mokin_varaukset
   condition: []
   action:
+  - service: script.syote_ilp_kotona
+    data: {}
+  - delay:
+      hours: 4
+      minutes: 0
+      seconds: 0
+      milliseconds: 0
+    enabled: true
   - service: scene.turn_on
     target:
       entity_id: scene.kotona
     metadata: {}
-  - service: script.syote_ilp_kotona
-    data: {}
+  - delay:
+      hours: 1
+      minutes: 0
+      seconds: 0
+      milliseconds: 0
+    enabled: true
+  - if:
+    - condition: template
+      value_template: 'condition: template
+
+        value_template: "{{ now().month >= 9 or now().month <= 5 }}"
+
+
+        '
+      alias: Nosta lämpötilaa talvella
+    then:
+    - service: climate.set_temperature
+      data:
+        temperature: 24
+      target:
+        device_id: 42c2fdcb8e532e26088702f0de6a4d17
+      alias: Nosta lämpötilaa talvella
+    else:
+    - service: climate.set_temperature
+      data:
+        temperature: 18
+      target:
+        device_id: 42c2fdcb8e532e26088702f0de6a4d17
+      alias: Kesällä riittää vähempikin
+    - type: turn_off
+      device_id: 22daecc70089e9656ada5a5cbfef1e7e
+      entity_id: switch.syote_keittion_patteri_socket_1
+      domain: switch
+      alias: Kesällä ei tarvi keittiön patteria
+    - service: climate.set_temperature
+      data:
+        temperature: '12'
+      target:
+        device_id: cabf50c927ed08793b48803d3b0f7453
+      alias: Kesällä vain peruslämmöt
   mode: single
 - id: '1699105774456'
-  alias: Mökki - lämmöt pois
+  alias: Syöte - lämmöt pois
   description: Lämmöt pois automaattisesti varauskalenterin perusteella
   trigger:
   - platform: calendar
@@ -78,11 +167,15 @@
     offset: '-6:0:0'
     entity_id: calendar.mokin_varaukset
   condition:
-  - condition: numeric_state
-    entity_id: calendar.mokin_varaukset
-    attribute: all_day
-    below: 1
-    enabled: false
+  - condition: template
+    value_template: '{% set tomorrow = now().replace(hour=0, minute=0, second=0, microsecond=0)
+      + timedelta(days=1) %}  {% set tomorrow_end = tomorrow.replace(hour=23, minute=59,
+      second=59, microsecond=999999) %} {% set events = states.calendar.mokin_varaukset.attributes.events
+      %} {% set all_day_events = events | selectattr(''all_day'', ''eq'', true) |
+      list %} {% set tomorrow_events = all_day_events | selectattr(''start_time'',
+      ''>='', tomorrow) | selectattr(''start_time'', ''<='', tomorrow_end) | list
+      %} {{ tomorrow_events | length == 0 }}'
+    alias: No reservations tomorrow
   action:
   - service: scene.turn_on
     target:
@@ -90,4 +183,243 @@
     metadata: {}
   - service: script.syote_ilp_poissa
     data: {}
+  mode: single
+- id: '1705436867202'
+  alias: Hae uudet pörssisähkö datat
+  description: Koitetaan hakea 14 jälkeen kerran tunnissa
+  trigger:
+  - platform: time_pattern
+    minutes: '0'
+  condition:
+  - condition: and
+    conditions:
+    - condition: time
+      after: '14:00:00'
+      before: '23:59:00'
+    - condition: template
+      value_template: '{{ as_timestamp(states.sensor.porssisahko_status.attributes[''updated_to''])
+        | timestamp_custom(''%Y-%m-%d'') == now().date().isoformat() }}'
+  action:
+  - service: homeassistant.update_entity
+    data: {}
+    target:
+      entity_id: sensor.porssisahko_update_prices
+  mode: single
+- id: '1706263066506'
+  alias: 'Syöte: Säädä patterit lämpöpumpun mukaan'
+  description: ''
+  trigger:
+  - platform: state
+    entity_id:
+    - climate.loukastie
+    attribute: temperature
+  condition:
+  - condition: device
+    device_id: 42c2fdcb8e532e26088702f0de6a4d17
+    domain: climate
+    entity_id: climate.loukastie
+    type: is_hvac_mode
+    hvac_mode: heat
+  - condition: numeric_state
+    entity_id: climate.loukastie
+    attribute: temperature
+    above: 16
+    below: 26
+  - condition: numeric_state
+    entity_id: climate.loukastie
+    attribute: current_temperature
+    above: 18
+  action:
+  - service: climate.set_temperature
+    data:
+      temperature: '{{ state_attr(''climate.loukastie'', ''temperature'') | float
+        - 2}}'
+    target:
+      device_id: cabf50c927ed08793b48803d3b0f7453
+  mode: single
+- id: '1707722622474'
+  alias: Päivitä sää
+  description: Sääennusteen päivitys määrävälein (liian tiheä pollaus näyttää pykivän)
+  trigger:
+  - platform: time_pattern
+    hours: /6
+  condition: []
+  action:
+  - service: homeassistant.update_entity
+    entity_id: weather.saa_oulu
+  mode: single
+- id: '1708941749572'
+  alias: 'Syöte: Lataa ILP status manuaalisesti'
+  description: MELCloud throttlaa pyyntöjä - harvennetaan haku kerran vartissa tms
+  trigger:
+  - platform: time_pattern
+    minutes: /15
+  condition: []
+  action:
+  - service: homeassistant.update_entity
+    data: {}
+    target:
+      entity_id:
+      - climate.loukastie
+  mode: single
+- id: '1715791572638'
+  alias: Varoita MLP virheestä
+  description: ''
+  trigger:
+  - platform: state
+    entity_id:
+    - sensor.mlp_virheaika
+    - sensor.mlp_virhekoodi
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: MLP - virheilmoitus - käy nollaamassa pumpun paneelista
+  mode: single
+- id: '1715791806597'
+  alias: Syöte - lämpötilavahti
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id: climate.syote_olohuone
+    for:
+      hours: 0
+      minutes: 10
+      seconds: 0
+    attribute: current_temperature
+    below: 5
+  - platform: numeric_state
+    entity_id: climate.syote_kh_lattialammitys
+    for:
+      hours: 0
+      minutes: 10
+      seconds: 0
+    below: 5
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: Syöte - tarkista lämpötila
+  mode: single
+- id: '1715792103523'
+  alias: Kastelli - lämpötilahälytys
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id: sensor.kastelli_temperature
+    for:
+      hours: 0
+      minutes: 10
+      seconds: 0
+    below: 10
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: Kastelli - lämpötilahälytys
+  mode: single
+- id: '1715792441583'
+  alias: Raspi - tilahälytys
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id: sensor.localhost_ram_used_percent
+    for:
+      hours: 0
+      minutes: 10
+      seconds: 0
+    above: 95
+  - platform: numeric_state
+    entity_id: sensor.localhost_used_percent
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 75
+  - platform: numeric_state
+    entity_id: sensor.localhost_cpu_used
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 98
+  - platform: numeric_state
+    entity_id: sensor.localhost_cpu_thermal_1_temperature
+    for:
+      hours: 0
+      minutes: 10
+      seconds: 0
+    above: 55
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: 'Raspin tilahäly: {{- ''\n'' -}}° RAM : {{states(''sensor.localhost_ram_used_percent'')
+        }},  {{- ''\n'' -}}° DISK: {{states(''sensor.localhost_used_percent'') }},   {{-
+        ''\n'' -}}° CPU : {{states(''sensor.localhost_cpu_used'') }},   {{- ''\n''
+        -}}° TEMP: {{states(''sensor.localhost_cpu_thermal_1_temperature'') }}'
+  mode: single
+- id: '1715792724529'
+  alias: NAS - tilahäly
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id: sensor.markonnas_volume_1_volume_used
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 75
+  - platform: state
+    entity_id:
+    - sensor.markonnas_volume_1_status
+  - platform: numeric_state
+    entity_id: sensor.markonnas_drive_1_temperature
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 35
+  - platform: numeric_state
+    entity_id: sensor.markonnas_drive_2_temperature
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 35
+  - platform: numeric_state
+    entity_id: sensor.markonnas_temperature
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    above: 50
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: 'NAS tilahäly: {{- ''\n'' -}}° Vol1 used : %: {{states(''sensor.markonnas_volume_1_volume_used'')
+        }},  {{- ''\n'' -}}° Vol1 Status     : {{states(''sensor.markonnas_volume_1_status'')
+        }},   {{- ''\n'' -}}° Drive1Temp : {{states(''sensor.markonnas_drive_1_temperature'')
+        }},   {{- ''\n'' -}}° Drive2Temp: {{states(''sensor.markonnas_drive_2_temperature'')
+        }}, {{- ''\n'' -}}° NASTemp   : {{states(''sensor.markonnas_temperature'')
+        }}'
+  mode: single
+- id: '1720438846810'
+  alias: Hailuoto Battery Alert
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id: sensor.hailuoto_soc_23
+    for:
+      hours: 1
+      minutes: 0
+      seconds: 0
+    below: 50
+  condition: []
+  action:
+  - service: notify.persistent_notification
+    data:
+      message: 'Hailuoto Battery Alarm: {{- ''\n'' -}}° SOC : %: {{states(''sensor.hailuoto_soc_23'')
+        }},  {{- ''\n'' -}}° Updated: {{states(''sensor.hailuoto_last_updated'') }}'
   mode: single

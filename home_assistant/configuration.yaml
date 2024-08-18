@@ -1,5 +1,5 @@
 luxtronik:
-  host: 192.168.xxx.xxx
+  host: !secret local_address_heatpump 
   port: 8889
 
 # Default stuff
@@ -13,7 +13,7 @@ frontend:
 tts:
   - platform: google_translate
 
-mqtt:
+mqtt: 
   sensor:
     - name: "kastelli_energy"
       state_topic: "esp/ldr/energy"
@@ -22,6 +22,52 @@ mqtt:
       device_class: energy
       state_class: measurement
       force_update: true
+
+homeassistant:
+  auth_providers:
+    - type: homeassistant 
+    - type: trusted_networks
+      trusted_networks:
+        - 192.168.11.186 ## your device IP
+      trusted_users:
+        192.168.11.186: b25bf29f29ff46d0981804f72dec915d ### the user id
+      allow_bypass_login: true
+
+rest_command:
+  porssisahko_update_prices:
+    url: http://127.0.0.1:5000/update_prices
+
+shell_command:
+  restart_pow: touch ~/.pow/restart.txt
+  porssisahko_update_prices: curl http://127.0.0.1:5000/update_prices
+
+rest:
+  resource: "https://vrmapi.victronenergy.com/v2/installations/338100/stats"
+  scan_interval: 300 #5min
+  headers:
+    content-type: application/json
+    x-authorization: Token 8a6ae64c2d7cf7857ae4ba0279dd0a260505e3cdc1109f29d9cc1b6066b2ae76 
+  sensor:
+    - name: "Hailuoto_SOC"
+      #unique_id: "vrm_hailuoto_battery_soc"
+      value_template: "{{ value_json['records']['bs'][-1:][0][1] }}"
+      icon: "mdi:battery"  
+    - name: "Hailuoto_timestamp"
+      #unique_id:  "vrm_hailuoto_battery_soc_ts"
+      value_template: "{{ (value_json['records']['bs'][-1:][0][0]|int/1000) }}"
+template:
+  sensor:
+    - name: "Hailuoto last updated"
+      unique_id: hailuoto_last_updated
+      state: '{{ relative_time(states("sensor.hailuoto_timestamp_22")  | as_datetime | as_local +timedelta(hours=1)) }} ago' #this might be DST issue in HA or in sending device :shrug: 
+
+binary_sensor:
+  - platform: ping
+    host: 8.8.8.8
+    count: 1
+    scan_interval: 60
+    name: Internet
+
 
 automation: !include automations.yaml
 script: !include scripts.yaml
